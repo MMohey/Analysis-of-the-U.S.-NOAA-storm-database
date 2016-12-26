@@ -1,0 +1,262 @@
+---
+title: 'Reproducible Research: Course Project 2'
+author: "Moh A"
+date: "24/12/2016"
+output: html_document
+---
+
+
+# Analysis of the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database
+
+
+# Synopsis
+
+This report explores and analyses the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. In this database, several details related to weather events and major storms in the Unites States are recorded.
+
+The analysis in this report investigated the types of events that are most harmful with respect to population health. As well as, determining which types of events have the greatest economic consequences.
+
+The analysis concluded that Tornado, Excessive Heat and TSTM Wind are among the top harmful with respect to population health. In addition, it reports that Flood, Drought, and Hurricane/Typhoon have the greatest economic consequences across the U.S.
+
+
+
+# Data Processing
+
+
+### Loading libraries
+```{r, message=FALSE, warning=FALSE}
+library(R.utils)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
+
+### Download and unzip the database in the chosen working directory
+```{r, message=FALSE, warning=FALSE}
+setwd("~/Downloads/All DS Course/DS_Workspace/Reproducible Research_Course Project 2") # set working directory
+
+if (!file.exists('StormData.csv.bz2')) { # Download the file if it does not
+    download.file( # exist in the working directory
+        "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = 'StormData.csv.bz2')
+}
+
+if (file.exists('StormData.csv.bz2')) {
+    # uncompress the file and read the CSV file into a data file
+    dt <- read.csv(bzfile('StormData.csv.bz2'), header = TRUE)
+}
+```
+
+
+### Exploring variables and dimension of the dataset 
+```{r, message=FALSE, warning=FALSE}
+str(dt)
+head(dt)
+```
+
+
+## Since this report aims to provide an answer to:
+
+1. Which types of events are most harmful with respect to population health?
+2. which types of events have the greatest economic consequences?
+
+
+### Therefore only relevant variables of the dataset were selected in order to increase the computation speed
+
+```{r, message=FALSE, warning=FALSE}
+dt <-
+    select(dt,
+           EVTYPE,
+           FATALITIES,
+           INJURIES,
+           PROPDMG,
+           PROPDMGEXP,
+           CROPDMG,
+           CROPDMGEXP)
+```
+
+
+
+## Harmful weather events to population health divided into:
+
+
+### 1. Top harmful events with respect to fatalities:
+
+```{r, message=FALSE, warning=FALSE}
+top_fatalities <-
+    # finds the sum of fatalities according to event type
+    aggregate(dt$FATALITIES, list(dt$EVTYPE), FUN  = 'sum')
+top_fatalities <-
+    arrange(top_fatalities, desc(x)) %>% top_n(10) # sort Desc.
+top_fatalities # list top 10 events causing fatalities
+```
+
+
+### 2. Top harmful events ll respect to injuries:
+
+```{r, message=FALSE, warning=FALSE}
+top_injuries <- aggregate(dt$INJURIES, list(dt$EVTYPE), FUN  = 'sum')
+top_injuries <- arrange(top_injuries, desc(x)) %>% top_n(10)
+top_injuries
+```
+
+
+
+## A Barplot for top events causing Fatalities and Injuries
+
+```{r, message=FALSE, warning=FALSE}
+fatalities_barplot <- 
+    ggplot(top_fatalities, aes(x = reorder(Group.1,-x), y = x))  +
+    geom_bar(stat = 'identity') +
+    scale_y_continuous('Total Fatalities') + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    xlab('Weather Event') + 
+    ggtitle('Top 10 Weather Events \n causing Fatalities in the US \n (1950 - 2011)')
+
+injuries_barplot <-
+    ggplot(top_injuries, aes(x = reorder(Group.1, -x), y = x))  +
+    geom_bar(stat = 'identity') + 
+    scale_y_continuous('Total Injuries') + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    xlab('Weather Event') + 
+    ggtitle('Top 10 Weather Events \n causing Injuries in the US \n (1950 - 2011)')
+
+grid.arrange(fatalities_barplot, injuries_barplot, ncol = 2)
+```
+
+
+## Events that have the greatest economic consequences divided into:
+
+
+### Implementation of function that does the calcualtion of the 'damage' value and its expoential. This is in order to calculate both 'Property Damage' and 'Crop Damage'
+
+```{r, message=FALSE, warning=FALSE}
+## This function takes as input: database, exponential number. Outputs: the
+## value of 'Damage' mutliplied by its exponential.
+
+exponential_to_number <- function(data = dt, exponential, output) {
+    
+    index <- # finds index of the selected exponential
+        which(colnames(data) == exponential)
+    
+    data[, index] <- # Turns that column into char.
+        as.character(data[, index])
+    
+    # check for NA values and also turns the chosen column to upperCase
+    non_na_values <- !is.na(toupper(data[, index]))
+    
+    data[is.na(data[, index]), index] <- '0' # Turn NA values to 0
+    
+    # The following lines checks of the observation is non NA value and its
+    # upper/lower case equals the specified character factors ('', 'h', 'k',
+    # 'm', 'b') then turns its value to ('0', '2', '3', '6', '9') 
+    # respectively.
+    data[non_na_values & toupper(data[, index]) == '', index]  <- '0'
+    data[non_na_values & toupper(data[, index]) == 'H', index] <- '2'
+    data[non_na_values & toupper(data[, index]) == 'K', index] <- '3'
+    data[non_na_values & toupper(data[, index]) == 'M', index] <- '6'
+    data[non_na_values & toupper(data[, index]) == 'B', index] <- '9'
+    
+    data[, index] <-
+        as.numeric(data[, index]) # Turn char numbers into numeric
+    
+    # vector to store the multiplication of exponential * magnitude
+    result <- 10 ^ data[, index] * data[, index - 1]
+    data <-
+        cbind(data, result) # Bind the newly calculated vector to dataset
+    names(data)[ncol(data)] <- output # set the new column name
+    
+    return(data)
+}
+```
+
+
+### 1. Top harmful events with respect to Property Damage:
+```{r, message=FALSE, warning=FALSE}
+dt <- exponential_to_number(dt, 'PROPDMGEXP', 'property_damage')
+top_property_damage <- # finds the sum of PROPDMG according to event type
+    aggregate(dt$property_damage, list(dt$EVTYPE), FUN  = 'sum')
+top_property_damage <- # Sort the vector descendingly
+    arrange(top_property_damage, desc(x)) %>% top_n(10)
+top_property_damage # list top 10 events causing Property Damage
+```
+
+### 2. Top harmful events with respect to Crop Damage:
+```{r, message=FALSE, warning=FALSE}
+dt <- exponential_to_number(dt, 'CROPDMGEXP', 'crop_damage')
+top_crop_damage <-
+    aggregate(dt$crop_damage, list(dt$EVTYPE), FUN  = 'sum')
+top_crop_damage <- arrange(top_crop_damage, desc(x)) %>% top_n(10)
+top_crop_damage
+```
+
+
+## A Barplot for top events causing Property and Crop Damage
+```{r, message=FALSE, warning=FALSE}
+property_barplot <-
+        ggplot(top_property_damage, aes(x = reorder(Group.1, -x), y = x))  +         geom_bar(stat = 'identity') +
+        scale_y_continuous('Total Property Damage') + 
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +                   xlab('Weather Event') + 
+        ggtitle('Top 10 Weather Events \n causing Property in the US \n (1950 - 2011)')
+    
+crop_barplot <-
+        ggplot(top_crop_damage, aes(x = reorder(Group.1, -x), y = x))  +             geom_bar(stat = 'identity') + 
+        scale_y_continuous('Total Crop Damage') + 
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        xlab('Weather Event') + 
+        ggtitle('Top 10 Weather Events \n causing Crop Damage in the US \n (1950 - 2011)')
+    
+    grid.arrange(property_barplot, crop_barplot, ncol = 2)
+```
+
+
+# Results
+
+Data analysis and exploration were performed on the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of weather events in the United States, as well as estimates of any fatalities, injuries, and property damage
+
+It was found that Tornado was the top factor for causing fatalities, followed by Excessive Heat and Flash Flood. Tornado was also the top factor for casuing injuries, followed by TSTM Wind and Flood.
+
+In addition, Flood was also the top factor for causing Property Damage, followed by Hurricane/ Typhoon and Storm Surge. However, Drought was the top factor causing crop damage, followed by Flood and River Flood.
+
+
+
+```{r, message=FALSE, warning=FALSE}
+## Summary of the previous plots plotted on one figure
+
+fatalities_barplot <-
+    ggplot(top_fatalities, aes(x = reorder(Group.1,-x), y = x))  +
+    geom_bar(stat = 'identity') +
+    scale_y_continuous('Total Fatalities') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    xlab('Weather Event') +
+    ggtitle('Top 10 Weather Events \n causing Fatalities in the US \n (1950 - 2011)')
+    
+    injuries_barplot <-
+    ggplot(top_injuries, aes(x = reorder(Group.1, -x), y = x))  +
+    geom_bar(stat = 'identity') +
+    scale_y_continuous('Total Injuries') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    xlab('Weather Event') +
+    ggtitle('Top 10 Weather Events \n causing Injuries in the US \n (1950 - 2011)')
+    
+    property_barplot <-
+    ggplot(top_property_damage, aes(x = reorder(Group.1, -x), y = x))  +         geom_bar(stat = 'identity') +
+    scale_y_continuous('Total Property Damage') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +                   xlab('Weather Event') +
+    ggtitle('Top 10 Weather Events \n causing Property in the US \n (1950 - 2011)')
+    
+    crop_barplot <-
+    ggplot(top_crop_damage, aes(x = reorder(Group.1, -x), y = x))  +             geom_bar(stat = 'identity') +
+    scale_y_continuous('Total Crop Damage') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    xlab('Weather Event') +
+    ggtitle('Top 10 Weather Events \n causing Crop Damage in the US \n (1950 - 2011)')
+    
+    grid.arrange(
+    fatalities_barplot,
+    injuries_barplot,
+    property_barplot,
+    crop_barplot,
+    nrow = 2,
+    ncol = 2
+    )
+```
+
